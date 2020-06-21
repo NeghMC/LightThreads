@@ -10,6 +10,10 @@
 #ifndef LIGHTTHREADS_H_
 #define LIGHTTHREADS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum lt_flag {
 	LT_YIELDED,
 	LT_BLOCKED,
@@ -42,7 +46,7 @@ struct lt_thread_s {
 	void name(lt_thread_t * lt_context)
 	
 #define LT_THREAD_CREATE(taskName, _context)\
-	(lt_thread_t){.task = taskName, .flag = LT_YIELDED, .context = _context, .nextPoint = LT_NULL, .semaphore = LT_NULL}
+	(lt_thread_t){.task = taskName, .flag = LT_YIELDED, .semaphore = LT_NULL, .nextPoint = LT_NULL, .context = _context}
 
 #define LT_START\
 	if(lt_context->nextPoint != LT_NULL)\
@@ -71,9 +75,9 @@ struct lt_thread_s {
 	return;\
 	FORCE_SEMICOLON
 	
-#define LT_SEMAPHORE_TAKE(semaphore)\
-	if(semaphore.count == 0) {\
-		lt_context->semaphore = &semaphore;\
+#define LT_SEMAPHORE_TAKE(_semaphore)\
+	if(_semaphore.count == 0) {\
+		lt_context->semaphore = &_semaphore;\
 		lt_context->flag = LT_BLOCKED;\
 		lt_context->nextPoint = &&LABEL(__LINE__);\
 		return;\
@@ -102,5 +106,9 @@ struct lt_thread_s {
 			break;\
 	}\
 	FORCE_SEMICOLON
+	
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIGHTTHREADS_H_ */
