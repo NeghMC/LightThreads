@@ -3,13 +3,8 @@
 void ls_criticalStart();
 void ls_criticalEnd();
 
-struct contextList
-{
-	volatile lt_thread_t *first;
-	volatile lt_thread_t *last;
-}; 
 
-static volatile struct contextList sScheduledList;
+static volatile lt_threadsList_t sScheduledList;
 /*
 static volatile struct ls_context *sDelayed;
 static ls_idleTask_t *sIdle;
@@ -31,28 +26,50 @@ void ls_init (void *buffer)
 }
 */
 
+static void pushToEnd(lt_threadsList_t *list, lt_thread_t *thread)
+{
+	if(thread != NULL)
+	{
+		if(list->first == NULL)
+		{ // its empty, we insert first one
+			list->first = thread;
+		}
+		else
+		{
+			list->last->nextThread = thread;
+		}
+		list->last = thread;
+	}
+}
+
+static lt_thread_t * popFromStart(lt_threadsList_t *list)
+{
+	lt_thread_t *toReturn;
+
+	if(list->first == NULL)
+	{
+		toReturn = NULL;
+	}
+	else
+	{
+		toReturn = list->first;
+		list->first = list->first->nextThread;
+		toReturn->nextThread = NULL;
+	}
+
+	return toReturn;
+}
+
 uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg)
 {
 	thread->function = function;
 	thread->arg = arg;
-	thread->flag = 0;
+	thread->flag = LT_INACTIVE;
 	thread->nextPoint = NULL;
 	thread->nextThread = NULL;
 
 	ls_criticalStart();
-
-	// schedule
-	if(sScheduledList.first == NULL)
-	{ // its empty, we insert first one
-		sScheduledList.first = thread;
-	}
-	else
-	{
-		sScheduledList.last->nextThread = thread;
-	}
-	sScheduledList.last = thread;
-	sScheduledList.last->nextThread = sScheduledList.first;
-	
+	pushToEnd(&sScheduledList, thread); // schedule
 	ls_criticalEnd();
 
 	return 0;
@@ -73,27 +90,25 @@ uint8_t lt_handle()
 	uint8_t wasExecuted;
 
 	ls_criticalStart();
-	if(current == NULL)
-	{
-		if(sScheduledList.first == NULL)
-		{
-			current = NULL;
-		}
-		else
-		{
-			current = sScheduledList.first;
-		}
-	}
-	else
-	{
-		current = current->nextThread;
-	}
+	current = popFromStart(&sScheduledList);
 	ls_criticalEnd();
-	
+
 	// process
 	if(current != NULL && current->function != NULL)	
 	{
 		current->function(current, current->arg);
+
+		// after processing
+		switch(current->flag)
+		{
+			case LT_YIELDED:
+				ls_criticalStart();
+				pushToEnd(&sScheduledList, current);
+				ls_criticalEnd();
+				break;
+			default:
+				break;
+		}
 		wasExecuted = 1;
 	}
 	else
@@ -103,6 +118,45 @@ uint8_t lt_handle()
 
 	return wasExecuted;
 }
+
+uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
+{
+	if(sem != NULL)
+	{
+		ls_criticalStart();
+		if(sem->taken)
+		{
+			pushToEnd(&sem->waiting, thread);
+		}
+		else
+		{
+			sem->taken = 1;
+		}
+		ls_criticalEnd();
+	}
+}
+
+uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
+{
+	if(sem != NULL)
+	{
+		ls_criticalStart();
+		if(sem->taken)
+		{
+			lt_thread_t *thread =  popFromStart(&sem->waiting);
+			if(thread == NULL)
+			{
+				sem->taken = 0;
+			}
+			else
+			{
+				pushToEnd(&sScheduledList, thread);
+			}
+		}
+		ls_criticalEnd();
+	}
+}
+
 /*
 #ifndef LS_DONT_USE_DELAY
 

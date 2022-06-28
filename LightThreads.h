@@ -19,20 +19,25 @@ extern "C" {
 #endif
 
 enum lt_flag {
+	LT_INACTIVE,
 	LT_YIELDED,
-	LT_BLOCKED,
-	LT_SUSPENDED,
-	LT_ENDED
+	LT_BLOCKED
 };
 
 typedef struct lt_thread lt_thread_t;
 typedef void (*lt_function_t)(struct lt_thread*, void*); // pointer to function
+typedef struct lt_threadsList lt_threadsList_t;
 
-/*
+struct lt_threadsList
+{
+	volatile lt_thread_t *first;
+	volatile lt_thread_t *last;
+}; 
 typedef struct {
-	volatile int count;
-} lt_semaphore_t;
-*/
+	volatile uint8_t taken;
+	lt_threadsList_t waiting;
+} lt_semaphoreBinary_t;
+
 
 struct lt_thread {
 	lt_function_t function;
@@ -55,15 +60,6 @@ struct lt_thread {
 	if(lt_context->nextPoint != NULL)\
 		goto *(lt_context->nextPoint);\
 	FORCE_SEMICOLON
-	
-#define LT_WAIT_UNTIL(cond)\
-	lt_context->nextPoint = &&LABEL(__LINE__);\
-	LABEL(__LINE__):\
-	if(!(cond)) {\
-		lt_context->flag = LT_YIELDED;\
-		return;\
-	}\
-	FORCE_SEMICOLON
 		
 #define LT_YIELD\
 	lt_context->flag = LT_YIELDED;\
@@ -74,20 +70,24 @@ struct lt_thread {
 
 #define LT_END\
 	lt_context->nextPoint = NULL;\
-	lt_context->flag = LT_ENDED;\
+	lt_context->flag = LT_INACTIVE;\
 	return;\
 	FORCE_SEMICOLON
 	
-/*
+
 #define LT_SEMAPHORE_TAKE(_semaphore)\
-	if(_semaphore.count == 0) {\
-		lt_context->semaphore = &_semaphore;\
-		lt_context->flag = LT_BLOCKED;\
-		lt_context->nextPoint = &&LABEL(__LINE__);\
-		return;\
-	}\
+	lt_semaphoreTake(&_semaphore, lt_context);\
+	lt_context->flag = LT_BLOCKED;\
+	lt_context->nextPoint = &&LABEL(__LINE__);\
+	return;\
 	LABEL(__LINE__):\
 	FORCE_SEMICOLON
+
+#define LT_SEMAPHORE_GIVE(_semaphore)\
+	lt_semaphoreGive(&_semaphore);\
+	FORCE_SEMICOLON
+
+/*
 
 #define LT_SEMAPHORE_SIGNAL(semaphore)\
 	semaphore.count++
@@ -116,6 +116,8 @@ struct lt_thread {
 uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg);
 //void ls_assignIdleTask(ls_idleTask_t *fun);
 uint8_t lt_handle();
+uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread);
+uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem);
 	
 #ifdef __cplusplus
 }
