@@ -14,6 +14,10 @@
 extern "C" {
 #endif
 
+#ifndef NULL
+#define NULL ((void*)0u)
+#endif
+
 enum lt_flag {
 	LT_YIELDED,
 	LT_BLOCKED,
@@ -21,35 +25,34 @@ enum lt_flag {
 	LT_ENDED
 };
 
-typedef struct lt_thread_s lt_thread_t;
-typedef void (*lt_task_p)(lt_thread_t*); // pointer to function
+typedef struct lt_thread lt_thread_t;
+typedef void (*lt_function_t)(struct lt_thread*, void*); // pointer to function
 
+/*
 typedef struct {
 	volatile int count;
 } lt_semaphore_t;
+*/
 
-struct lt_thread_s {
-	lt_task_p task;
+struct lt_thread {
+	lt_function_t function;
+	void * arg;
+
 	enum lt_flag flag;
-	lt_semaphore_t * semaphore;
 	void * nextPoint;
-	void * context;
+	lt_thread_t *nextThread;
 };
 
 /* some utilities */
 #define _CONCAT(s1, s2) s1##s2
 #define LABEL(line) _CONCAT(lt_, line)
 #define FORCE_SEMICOLON do{}while(0)
-#define LT_NULL 0
 
 #define LT_TASK(name)\
-	void name(lt_thread_t * lt_context)
-	
-#define LT_THREAD_CREATE(taskName, _context)\
-	(lt_thread_t){.task = taskName, .flag = LT_YIELDED, .semaphore = LT_NULL, .nextPoint = LT_NULL, .context = _context}
+	void name(lt_thread_t *lt_context, void *arg)
 
 #define LT_START\
-	if(lt_context->nextPoint != LT_NULL)\
+	if(lt_context->nextPoint != NULL)\
 		goto *(lt_context->nextPoint);\
 	FORCE_SEMICOLON
 	
@@ -70,11 +73,12 @@ struct lt_thread_s {
 	FORCE_SEMICOLON
 
 #define LT_END\
-	lt_context->nextPoint = LT_NULL;\
+	lt_context->nextPoint = NULL;\
 	lt_context->flag = LT_ENDED;\
 	return;\
 	FORCE_SEMICOLON
 	
+/*
 #define LT_SEMAPHORE_TAKE(_semaphore)\
 	if(_semaphore.count == 0) {\
 		lt_context->semaphore = &_semaphore;\
@@ -106,6 +110,12 @@ struct lt_thread_s {
 			break;\
 	}\
 	FORCE_SEMICOLON
+*/
+	
+	
+uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg);
+//void ls_assignIdleTask(ls_idleTask_t *fun);
+uint8_t lt_handle();
 	
 #ifdef __cplusplus
 }
