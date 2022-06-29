@@ -1,7 +1,7 @@
 #include "LightThreads.h"
 
-void ls_criticalStart();
-void ls_criticalEnd();
+void lt_criticalStart();
+void lt_criticalEnd();
 
 #ifdef LT_USE_IDLE_HANDLER
 	void ls_idleHandler();
@@ -54,9 +54,9 @@ uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg)
 	thread->nextPoint = NULL;
 	thread->nextThread = NULL;
 
-	ls_criticalStart();
+	lt_criticalStart();
 	pushToEnd(&sScheduledList, thread); // schedule
-	ls_criticalEnd();
+	lt_criticalEnd();
 
 	return 0;
 }
@@ -66,9 +66,9 @@ uint8_t lt_handle()
 	static volatile lt_thread_t *current;
 	uint8_t wasExecuted = 0;
 
-	ls_criticalStart();
+	lt_criticalStart();
 	current = popFromStart(&sScheduledList);
-	ls_criticalEnd();
+	lt_criticalEnd();
 
 	// process
 	if(current != NULL)
@@ -81,9 +81,9 @@ uint8_t lt_handle()
 			switch(current->flag)
 			{
 				case LT_YIELDED:
-					ls_criticalStart();
+					lt_criticalStart();
 					pushToEnd(&sScheduledList, current);
-					ls_criticalEnd();
+					lt_criticalEnd();
 					break;
 				default:
 					break;
@@ -107,7 +107,7 @@ uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
 {
 	if(sem != NULL)
 	{
-		ls_criticalStart();
+		lt_criticalStart();
 		if(sem->taken)
 		{
 			pushToEnd(&sem->waiting, thread);
@@ -116,7 +116,7 @@ uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
 		{
 			sem->taken = 1;
 		}
-		ls_criticalEnd();
+		lt_criticalEnd();
 	}
 }
 
@@ -124,7 +124,7 @@ uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
 {
 	if(sem != NULL)
 	{
-		ls_criticalStart();
+		lt_criticalStart();
 		if(sem->taken)
 		{
 			lt_thread_t *thread =  popFromStart(&sem->waiting);
@@ -137,7 +137,7 @@ uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
 				pushToEnd(&sScheduledList, thread);
 			}
 		}
-		ls_criticalEnd();
+		lt_criticalEnd();
 	}
 }
 
@@ -153,7 +153,7 @@ void lt_delay(uint16_t ticks, lt_thread_t *thread)
 	}
 	thread->delay = ticks;
 
-	ls_criticalStart();
+	lt_criticalStart();
 	{
 		if(sDelayed == NULL)
 		{
@@ -190,7 +190,7 @@ void lt_delay(uint16_t ticks, lt_thread_t *thread)
 			}
 		}
 	}
-	ls_criticalEnd();
+	lt_criticalEnd();
 }
 
 void lt_tick()
