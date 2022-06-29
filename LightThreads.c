@@ -78,15 +78,11 @@ uint8_t lt_handle()
 			current->function(current, current->arg);
 
 			// after processing
-			switch(current->flag)
+			if(current->flag == LT_READY)
 			{
-				case LT_YIELDED:
-					lt_criticalStart();
-					pushToEnd(&sScheduledList, current);
-					lt_criticalEnd();
-					break;
-				default:
-					break;
+				lt_criticalStart();
+				pushToEnd(&sScheduledList, current);
+				lt_criticalEnd();
 			}
 			wasExecuted = 1;
 		}
@@ -111,6 +107,7 @@ uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
 		if(sem->taken)
 		{
 			pushToEnd(&sem->waiting, thread);
+			thread->flag = LT_BLOCKED;
 		}
 		else
 		{
@@ -145,52 +142,53 @@ uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
 
 #ifdef LT_USE_DELAY
 
-void lt_delay(uint16_t ticks, lt_thread_t *thread)
+uint8_t lt_delay(uint16_t ticks, lt_thread_t *thread)
 {
-	if(ticks == 0)
+	if(ticks != 0)
 	{
-		return;
-	}
-	thread->delay = ticks;
+		thread->delay = ticks;
+		thread->flag = LT_BLOCKED;
 
-	lt_criticalStart();
-	{
-		if(sDelayed == NULL)
+		lt_criticalStart();
 		{
-			sDelayed = thread;
-		}
-		else if(thread->delay < sDelayed->delay)
-		{
-			thread->nextThread = sDelayed;
-			sDelayed = thread;
-			thread->nextThread->delay -= thread->delay;
-		}
-		else
-		{
-			volatile lt_thread_t *temp = sDelayed;
-			while(1)
+			if(sDelayed == NULL)
 			{
-				thread->delay -= temp->delay;
-				if(temp->nextThread == NULL)
+				sDelayed = thread;
+			}
+			else if(thread->delay < sDelayed->delay)
+			{
+				thread->nextThread = sDelayed;
+				sDelayed = thread;
+				thread->nextThread->delay -= thread->delay;
+			}
+			else
+			{
+				volatile lt_thread_t *temp = sDelayed;
+				while(1)
 				{
-					temp->nextThread = thread;
-					break;
-				}
-				else if(thread->delay < temp->nextThread->delay)
-				{
-					thread->nextThread = temp->nextThread;
-					temp->nextThread = thread;
-					thread->nextThread->delay -= thread->delay;
-					break;
-				}
-				else
-				{
-					temp = temp->nextThread;
+					thread->delay -= temp->delay;
+					if(temp->nextThread == NULL)
+					{
+						temp->nextThread = thread;
+						break;
+					}
+					else if(thread->delay < temp->nextThread->delay)
+					{
+						thread->nextThread = temp->nextThread;
+						temp->nextThread = thread;
+						thread->nextThread->delay -= thread->delay;
+						break;
+					}
+					else
+					{
+						temp = temp->nextThread;
+					}
 				}
 			}
 		}
+		lt_criticalEnd();
 	}
-	lt_criticalEnd();
+	return ticks;
 }
 
 void lt_tick()
@@ -208,6 +206,7 @@ void lt_tick()
 			
 			// schedule
 			pushToEnd(&sScheduledList, current);
+			current->flag = LT_READY;
 
 			if(sDelayed == NULL)
 			{
