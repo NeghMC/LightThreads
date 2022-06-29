@@ -3,10 +3,13 @@
 void ls_criticalStart();
 void ls_criticalEnd();
 
+#ifdef LT_USE_IDLE_HANDLER
+	void ls_idleHandler();
+#endif
+
 
 static volatile lt_threadsList_t sScheduledList;
 static volatile lt_thread_t *sDelayed;
-static lt_thread_t *sIdle;
 
 
 static void pushToEnd(lt_threadsList_t *list, lt_thread_t *thread)
@@ -58,46 +61,42 @@ uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg)
 	return 0;
 }
 
-/*
-void ls_assignIdleTask(ls_idleTask_t *fun)
-{
-	ls_criticalStart();
-	sIdle = fun;
-	ls_criticalEnd();
-}
-*/
-
 uint8_t lt_handle()
 {
 	static volatile lt_thread_t *current;
-	uint8_t wasExecuted;
+	uint8_t wasExecuted = 0;
 
 	ls_criticalStart();
 	current = popFromStart(&sScheduledList);
 	ls_criticalEnd();
 
 	// process
-	if(current != NULL && current->function != NULL)	
+	if(current != NULL)
 	{
-		current->function(current, current->arg);
-
-		// after processing
-		switch(current->flag)
+		if(current->function != NULL)	
 		{
-			case LT_YIELDED:
-				ls_criticalStart();
-				pushToEnd(&sScheduledList, current);
-				ls_criticalEnd();
-				break;
-			default:
-				break;
+			current->function(current, current->arg);
+
+			// after processing
+			switch(current->flag)
+			{
+				case LT_YIELDED:
+					ls_criticalStart();
+					pushToEnd(&sScheduledList, current);
+					ls_criticalEnd();
+					break;
+				default:
+					break;
+			}
+			wasExecuted = 1;
 		}
-		wasExecuted = 1;
 	}
+#ifdef LT_USE_IDLE_HANDLER
 	else
 	{
-		wasExecuted = 0;
+		lt_idleHandler();
 	}
+#endif
 
 	return wasExecuted;
 }

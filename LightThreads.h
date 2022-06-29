@@ -109,7 +109,7 @@ struct lt_thread {
 #endif
 	
 uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg);
-//void ls_assignIdleTask(ls_idleTask_t *fun);
+void ls_setIdleTask(lt_thread_t *fun);
 uint8_t lt_handle();
 	
 #ifdef __cplusplus
