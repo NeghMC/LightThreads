@@ -5,26 +5,9 @@ void ls_criticalEnd();
 
 
 static volatile lt_threadsList_t sScheduledList;
-/*
-static volatile struct ls_context *sDelayed;
-static ls_idleTask_t *sIdle;
-*/
-/*
-void ls_init (void *buffer)
-{
-	sFreeList.first = (volatile struct ls_context *)buffer;
-	uint16_t i = 0;
-	while (i < (LS_SCHEDULER_CAPACITY - 1))
-    {
-		sFreeList.first[i].function = NULL;
-		sFreeList.first[i].arg = NULL;
-        sFreeList.first[i].next = &sFreeList.first[i+1];
-		i++;
-    }
-    sFreeList.first[i].next = NULL;
-	sFreeList.last = &sFreeList.first[i];
-}
-*/
+static volatile lt_thread_t *sDelayed;
+static lt_thread_t *sIdle;
+
 
 static void pushToEnd(lt_threadsList_t *list, lt_thread_t *thread)
 {
@@ -119,6 +102,8 @@ uint8_t lt_handle()
 	return wasExecuted;
 }
 
+#ifdef LT_USE_SEMAPHORES
+
 uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
 {
 	if(sem != NULL)
@@ -157,81 +142,61 @@ uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
 	}
 }
 
-/*
-#ifndef LS_DONT_USE_DELAY
+#endif
 
-uint8_t ls_scheduleDelayed(ls_function *fun, void *arg, uint16_t ticks)
+#ifdef LT_USE_DELAY
+
+void lt_delay(uint16_t ticks, lt_thread_t *thread)
 {
-	volatile struct ls_context *current;
-	uint8_t error;
-
 	if(ticks == 0)
 	{
-		ticks = 1;
+		return;
 	}
+	thread->delay = ticks;
 
 	ls_criticalStart();
-	// is free list empty
-	if(sFreeList.first == NULL)
 	{
-		error = 1;
-	}
-	else
-	{
-		error = 0;
-
-		// take
-		current = sFreeList.first;
-		sFreeList.first = sFreeList.first->next;
-		current->next = NULL;
-
-		// update
-		current->function = fun;
-		current->arg = arg;
-		current->delay = ticks;
-
 		if(sDelayed == NULL)
 		{
-			sDelayed = current;
+			sDelayed = thread;
 		}
-		else if(current->delay < sDelayed->delay)
+		else if(thread->delay < sDelayed->delay)
 		{
-			current->next = sDelayed;
-			sDelayed = current;
-			current->next->delay -= current->delay;
+			thread->nextThread = sDelayed;
+			sDelayed = thread;
+			thread->nextThread->delay -= thread->delay;
 		}
 		else
 		{
-			volatile struct ls_context *temp = sDelayed;
+			volatile lt_thread_t *temp = sDelayed;
 			while(1)
 			{
-				current->delay -= temp->delay;
-				if(temp->next == NULL)
+				thread->delay -= temp->delay;
+				if(temp->nextThread == NULL)
 				{
-					temp->next = current;
+					temp->nextThread = thread;
 					break;
 				}
-				else if(current->delay < temp->next->delay)
+				else if(thread->delay < temp->nextThread->delay)
 				{
-					current->next = temp->next;
-					temp->next = current;
-					current->next->delay -= current->delay;
+					thread->nextThread = temp->nextThread;
+					temp->nextThread = thread;
+					thread->nextThread->delay -= thread->delay;
 					break;
 				}
 				else
 				{
-					temp = temp->next;
+					temp = temp->nextThread;
 				}
 			}
 		}
 	}
 	ls_criticalEnd();
-	return error;
 }
 
-void ls_tickISR()
+void lt_tick()
 {
-	volatile struct ls_context *current;
+	volatile lt_thread_t *current;
 
 	if(sDelayed != NULL)
 	{
@@ -239,19 +204,11 @@ void ls_tickISR()
 		while(sDelayed->delay == 0u)
 		{
 			current = sDelayed;
-			sDelayed = sDelayed->next;
-			current->next = NULL;
+			sDelayed = sDelayed->nextThread;
+			current->nextThread = NULL;
 			
 			// schedule
-			if(sScheduledList.first == NULL)
-			{ // its empty, we insert first one
-				sScheduledList.first = current;
-			}
-			else
-			{
-				sScheduledList.last->next = current;
-			}
-			sScheduledList.last = current;
+			pushToEnd(&sScheduledList, current);
 
 			if(sDelayed == NULL)
 			{
@@ -261,4 +218,3 @@ void ls_tickISR()
 	}
 }
 #endif
-*/

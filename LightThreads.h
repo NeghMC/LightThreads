@@ -6,6 +6,7 @@
  */ 
 
 #include <stdint.h>
+#include "LightThreadsConfig.h"
 
 #ifndef LIGHTTHREADS_H_
 #define LIGHTTHREADS_H_
@@ -46,6 +47,9 @@ struct lt_thread {
 	enum lt_flag flag;
 	void * nextPoint;
 	lt_thread_t *nextThread;
+#ifdef LT_USE_DELAY
+	uint16_t delay;
+#endif
 };
 
 /* some utilities */
@@ -74,50 +78,39 @@ struct lt_thread {
 	return;\
 	FORCE_SEMICOLON
 	
+#ifdef LT_USE_SEMAPHORES
+	uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread);
+	uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem);
 
-#define LT_SEMAPHORE_TAKE(_semaphore)\
-	lt_semaphoreTake(&_semaphore, lt_context);\
-	lt_context->flag = LT_BLOCKED;\
-	lt_context->nextPoint = &&LABEL(__LINE__);\
-	return;\
-	LABEL(__LINE__):\
-	FORCE_SEMICOLON
+	#define LT_SEMAPHORE_TAKE(_semaphore)\
+		lt_semaphoreTake(&_semaphore, lt_context);\
+		lt_context->flag = LT_BLOCKED;\
+		lt_context->nextPoint = &&LABEL(__LINE__);\
+		return;\
+		LABEL(__LINE__):\
+		FORCE_SEMICOLON
 
-#define LT_SEMAPHORE_GIVE(_semaphore)\
-	lt_semaphoreGive(&_semaphore);\
-	FORCE_SEMICOLON
+	#define LT_SEMAPHORE_GIVE(_semaphore)\
+		lt_semaphoreGive(&_semaphore);\
+		FORCE_SEMICOLON
+#endif
 
-/*
+#ifdef LT_USE_DELAY
+	void lt_delay(uint16_t time, lt_thread_t *thread);
+	void lt_tick();
 
-#define LT_SEMAPHORE_SIGNAL(semaphore)\
-	semaphore.count++
-
-#define LT_GET_CONTEXT\
-	(lt_context->context)
-
-#define LT_SCHEDULE(threadName)\
-	switch(threadName.flag) {\
-		case LT_YIELDED:\
-			threadName.task(&threadName);\
-			break;\
-		case LT_BLOCKED:\
-			if(threadName.semaphore->count > 0) {\
-				threadName.semaphore->count--;\
-				threadName.task(&threadName);\
-			}\
-			break;\
-		default:\
-			break;\
-	}\
-	FORCE_SEMICOLON
-*/
-	
+	#define LT_DELAY(delay)\
+		lt_delay(delay, lt_context);\
+		lt_context->flag = LT_BLOCKED;\
+		lt_context->nextPoint = &&LABEL(__LINE__);\
+		return;\
+		LABEL(__LINE__):\
+		FORCE_SEMICOLON
+#endif
 	
 uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg);
 //void ls_assignIdleTask(ls_idleTask_t *fun);
 uint8_t lt_handle();
-uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread);
-uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem);
 	
 #ifdef __cplusplus
 }

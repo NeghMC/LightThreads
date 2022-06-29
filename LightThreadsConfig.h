@@ -1,0 +1,2 @@
+#define LT_USE_DELAY
+//#define LT_USE_BINATY_SEMAPHORES
