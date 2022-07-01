@@ -46,11 +46,11 @@ static lt_thread_t * popFromStart(lt_threadsList_t *list)
 	return toReturn;
 }
 
-uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg)
+uint8_t lt_taskCreate(lt_thread_t *thread, lt_function_t function, void *arg)
 {
 	thread->function = function;
 	thread->arg = arg;
-	thread->flag = LT_INACTIVE;
+	thread->flag = LT_READY;
 	thread->nextPoint = NULL;
 	thread->nextThread = NULL;
 
@@ -215,4 +215,28 @@ void lt_tick()
 		}
 	}
 }
+#endif
+
+#ifdef LT_USE_NOTIFICATIONS
+
+uint8_t lt_notifyTake(lt_thread_t *thread)
+{
+	if(thread != NULL && thread->flag == LT_READY)
+	{
+		thread->flag = LT_BLOCKED;
+	}
+	return 0;
+}
+uint8_t lt_notifyGive(lt_thread_t *thread)
+{
+	if(thread != NULL && thread->flag == LT_BLOCKED)
+	{
+		lt_criticalStart();
+		pushToEnd(&sScheduledList, thread);
+		thread->flag = LT_READY;
+		lt_criticalEnd();
+	}
+	return 0;
+}
+
 #endif

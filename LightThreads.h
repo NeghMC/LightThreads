@@ -93,7 +93,7 @@ struct lt_thread {
 		do {\
 		lt_semaphoreGive(&_semaphore);\
 		YIELD_POINT\
-		} while (0);
+		} while (0)
 #endif
 
 #ifdef LT_USE_DELAY
@@ -104,10 +104,27 @@ struct lt_thread {
 		do {\
 			lt_delay(delay, lt_context);\
 			YIELD_POINT\
-		} while (0);
+		} while (0)
+#endif
+
+#ifdef LT_USE_NOTIFICATIONS
+	uint8_t lt_notifyTake(lt_thread_t *thread);
+	uint8_t lt_notifyGive(lt_thread_t *thread);
+
+	#define LT_NOTIFY_TAKE()\
+		do {\
+			lt_notifyTake(lt_context);\
+			YIELD_POINT\
+		} while (0)
+
+	#define LT_NOTIFY_GIVE(thread)\
+		do {\
+			lt_notifyGive(&thread);\
+			YIELD_POINT\
+		} while (0)
 #endif
 	
-uint8_t lt_schedule(lt_thread_t *thread, lt_function_t function, void *arg);
+uint8_t lt_taskCreate(lt_thread_t *thread, lt_function_t function, void *arg);
 uint8_t lt_handle();
 	
 #ifdef __cplusplus
