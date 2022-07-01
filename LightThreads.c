@@ -4,7 +4,7 @@ void lt_criticalStart();
 void lt_criticalEnd();
 
 #ifdef LT_USE_IDLE_HANDLER
-	void ls_idleHandler();
+	void lt_idleHandler();
 #endif
 
 
