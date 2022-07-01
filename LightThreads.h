@@ -21,12 +21,12 @@ extern "C" {
 
 enum lt_flag {
 	LT_INACTIVE,
-	LT_READY,
+	LT_SCHEDULED,
 	LT_BLOCKED
 };
 
 typedef struct lt_thread lt_thread_t;
-typedef void (*lt_function_t)(struct lt_thread*, void*); // pointer to function
+typedef void (*lt_function_t)(lt_thread_t*); // pointer to function
 typedef struct lt_threadsList lt_threadsList_t;
 
 struct lt_threadsList
@@ -42,10 +42,10 @@ typedef struct {
 
 struct lt_thread {
 	lt_function_t function;
-	void * arg;
+	void *arg;
 
 	enum lt_flag flag;
-	void * nextPoint;
+	void *nextPoint;
 	lt_thread_t *nextThread;
 #ifdef LT_USE_DELAY
 	uint16_t delay;
@@ -55,22 +55,22 @@ struct lt_thread {
 /* some utilities */
 #define _CONCAT(s1, s2) s1##s2
 #define LABEL(line) _CONCAT(lt_, line)
-#define YIELD_POINT lt_context->nextPoint = &&LABEL(__LINE__); return; LABEL(__LINE__):;
 
 #define LT_TASK(name)\
-	void name(lt_thread_t *lt_context, void *arg)
+	void name(lt_thread_t *lt_context)
+
+#define LT_ARG\
+	(lt_context->arg)
 
 #define LT_START\
 	do {\
 		if(lt_context->nextPoint != NULL)\
 			goto *(lt_context->nextPoint);\
 	} while (0)
-	
-	
 		
 #define LT_YIELD\
 	do {\
-		YIELD_POINT\
+		lt_context->nextPoint = &&LABEL(__LINE__); return; LABEL(__LINE__):;\
 	} while (0)
 
 #define LT_END\
@@ -86,13 +86,13 @@ struct lt_thread {
 	#define LT_SEMAPHORE_TAKE(_semaphore)\
 		do {\
 		lt_semaphoreTake(&_semaphore, lt_context);\
-		YIELD_POINT\
+		LT_YIELD;\
 		} while (0)
 
 	#define LT_SEMAPHORE_GIVE(_semaphore)\
 		do {\
 		lt_semaphoreGive(&_semaphore);\
-		YIELD_POINT\
+		LT_YIELD;\
 		} while (0)
 #endif
 
@@ -103,24 +103,24 @@ struct lt_thread {
 	#define LT_DELAY(delay)\
 		do {\
 			lt_delay(delay, lt_context);\
-			YIELD_POINT\
+			LT_YIELD;\
 		} while (0)
 #endif
 
 #ifdef LT_USE_NOTIFICATIONS
-	uint8_t lt_notifyTake(lt_thread_t *thread);
+	//uint8_t lt_notifyTake(lt_thread_t *thread);
 	uint8_t lt_notifyGive(lt_thread_t *thread);
 
 	#define LT_NOTIFY_TAKE()\
 		do {\
-			lt_notifyTake(lt_context);\
-			YIELD_POINT\
+			lt_context->flag = LT_BLOCKED;\
+			LT_YIELD;\
 		} while (0)
 
 	#define LT_NOTIFY_GIVE(thread)\
 		do {\
 			lt_notifyGive(&thread);\
-			YIELD_POINT\
+			LT_YIELD;\
 		} while (0)
 #endif
 	

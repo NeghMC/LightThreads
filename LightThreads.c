@@ -32,7 +32,7 @@ static lt_thread_t * popFromStart(lt_threadsList_t *list)
 {
 	lt_thread_t *toReturn;
 
-	if(list->first == NULL)
+	if((list == NULL) || (list->first == NULL))
 	{
 		toReturn = NULL;
 	}
@@ -48,15 +48,18 @@ static lt_thread_t * popFromStart(lt_threadsList_t *list)
 
 uint8_t lt_taskCreate(lt_thread_t *thread, lt_function_t function, void *arg)
 {
-	thread->function = function;
-	thread->arg = arg;
-	thread->flag = LT_READY;
-	thread->nextPoint = NULL;
-	thread->nextThread = NULL;
+	if(thread != NULL)
+	{
+		thread->function = function;
+		thread->arg = arg;
+		thread->flag = LT_SCHEDULED;
+		thread->nextPoint = NULL;
+		thread->nextThread = NULL;
 
-	lt_criticalStart();
-	pushToEnd(&sScheduledList, thread); // schedule
-	lt_criticalEnd();
+		lt_criticalStart();
+		pushToEnd(&sScheduledList, thread); // schedule
+		lt_criticalEnd();
+	}
 
 	return 0;
 }
@@ -75,16 +78,16 @@ uint8_t lt_handle()
 	{
 		if(current->function != NULL)	
 		{
-			current->function(current, current->arg);
+			current->function(current);
+			wasExecuted = 1;
 
 			// after processing
-			if(current->flag == LT_READY)
+			if(current->flag == LT_SCHEDULED)
 			{
 				lt_criticalStart();
 				pushToEnd(&sScheduledList, current);
 				lt_criticalEnd();
 			}
-			wasExecuted = 1;
 		}
 	}
 #ifdef LT_USE_IDLE_HANDLER
@@ -101,7 +104,7 @@ uint8_t lt_handle()
 
 uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
 {
-	if(sem != NULL)
+	if((sem != NULL) && (thread != NULL))
 	{
 		lt_criticalStart();
 		if(sem->taken)
@@ -132,6 +135,7 @@ uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
 			else
 			{
 				pushToEnd(&sScheduledList, thread);
+				thread->flag = LT_SCHEDULED;
 			}
 		}
 		lt_criticalEnd();
@@ -144,7 +148,7 @@ uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
 
 uint8_t lt_delay(uint16_t ticks, lt_thread_t *thread)
 {
-	if(ticks != 0)
+	if((ticks != 0) && (thread != NULL))
 	{
 		thread->delay = ticks;
 		thread->flag = LT_BLOCKED;
@@ -206,7 +210,7 @@ void lt_tick()
 			
 			// schedule
 			pushToEnd(&sScheduledList, current);
-			current->flag = LT_READY;
+			current->flag = LT_SCHEDULED;
 
 			if(sDelayed == NULL)
 			{
@@ -218,24 +222,26 @@ void lt_tick()
 #endif
 
 #ifdef LT_USE_NOTIFICATIONS
-
+/*
 uint8_t lt_notifyTake(lt_thread_t *thread)
 {
-	if(thread != NULL && thread->flag == LT_READY)
+	if(thread != NULL && thread->flag == LT_SCHEDULED)
 	{
 		thread->flag = LT_BLOCKED;
 	}
 	return 0;
 }
+*/
 uint8_t lt_notifyGive(lt_thread_t *thread)
 {
-	if(thread != NULL && thread->flag == LT_BLOCKED)
+	lt_criticalStart();
+	if((thread != NULL) && (thread->flag == LT_BLOCKED))
 	{
-		lt_criticalStart();
 		pushToEnd(&sScheduledList, thread);
-		thread->flag = LT_READY;
-		lt_criticalEnd();
+		thread->flag = LT_SCHEDULED;
 	}
+	lt_criticalEnd();
+
 	return 0;
 }
 
