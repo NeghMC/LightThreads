@@ -1,248 +1,86 @@
-#include "LightThreads.h"
+#include "lightThreads.h"
 
-void lt_criticalStart();
-void lt_criticalEnd();
+#define LT_NULL ((void*)0)
 
-#ifdef LT_USE_IDLE_HANDLER
-	void lt_idleHandler();
-#endif
+#if !defined(LT_PRIORITIES)
+#define LT_PRIORITIES 1
+#endif // LT_PRIORITIES
 
+extern void lt_criticalEnter(void);
+extern void lt_criticalExit(void);
 
-static volatile lt_threadsList_t sScheduledList;
-static volatile lt_thread_t *sDelayed;
+typedef struct {
+    context_t *head;
+    context_t *tail;
+} contextsQueue_t;
 
+static contextsQueue_t mainQueue = {LT_NULL, LT_NULL};
 
-static void pushToEnd(lt_threadsList_t *list, lt_thread_t *thread)
+static void pushToEnd(contextsQueue_t *list, context_t *thread)
 {
-	if(thread != NULL)
+	if(thread != LT_NULL && list != LT_NULL)
 	{
-		if(list->first == NULL)
+		if(list->head == LT_NULL)
 		{ // its empty, we insert first one
-			list->first = thread;
+			list->head = thread;
 		}
 		else
 		{
-			list->last->nextThread = thread;
+			list->tail->nextContext = thread;
 		}
-		list->last = thread;
+		list->tail = thread;
 	}
 }
 
-static lt_thread_t * popFromStart(lt_threadsList_t *list)
+static context_t * popFromStart(contextsQueue_t *list)
 {
-	lt_thread_t *toReturn;
+	context_t *toReturn;
 
-	if((list == NULL) || (list->first == NULL))
+	if((list == LT_NULL) || (list->head == LT_NULL))
 	{
-		toReturn = NULL;
+		toReturn = LT_NULL;
 	}
 	else
 	{
-		toReturn = list->first;
-		list->first = list->first->nextThread;
-		toReturn->nextThread = NULL;
+		toReturn = list->head;
+		list->head = list->head->nextContext;
+		toReturn->nextContext = LT_NULL;
 	}
 
 	return toReturn;
 }
 
-uint8_t lt_taskCreate(lt_thread_t *thread, lt_function_t function, void *arg)
-{
-	if(thread != NULL)
-	{
-		thread->function = function;
-		thread->arg = arg;
-		thread->flag = LT_SCHEDULED;
-		thread->nextPoint = NULL;
-		thread->nextThread = NULL;
-
-		lt_criticalStart();
-		pushToEnd(&sScheduledList, thread); // schedule
-		lt_criticalEnd();
-	}
-
-	return 0;
+int lt_schedule(context_t *context) {
+    if(context->nextContext != LT_NULL)
+    {
+        return LT_SCHEDULE_INCORRECT_CONTEXT;
+    }
+    lt_criticalEnter();
+    pushToEnd(&mainQueue, context);
+    lt_criticalExit();
+    return LT_OK;
 }
 
-uint8_t lt_handle()
-{
-	static volatile lt_thread_t *current;
-	uint8_t wasExecuted = 0;
-
-	lt_criticalStart();
-	current = popFromStart(&sScheduledList);
-	lt_criticalEnd();
-
-	// process
-	if(current != NULL)
-	{
-		if(current->function != NULL)	
-		{
-			current->function(current);
-			wasExecuted = 1;
-
-			// after processing
-			if(current->flag == LT_SCHEDULED)
-			{
-				lt_criticalStart();
-				pushToEnd(&sScheduledList, current);
-				lt_criticalEnd();
-			}
-		}
-	}
-#ifdef LT_USE_IDLE_HANDLER
-	else
-	{
-		lt_idleHandler();
-	}
-#endif
-
-	return wasExecuted;
+int lt_schedulerHandler() {
+    lt_criticalEnter();
+    context_t *currentContext = popFromStart(&mainQueue);
+    lt_criticalExit();
+    if(currentContext == LT_NULL)
+    {
+        return 0;
+    }
+    thread_t *functionToCall = (thread_t*)currentContext->nextFunction;
+    if(functionToCall == LT_NULL)
+    {
+        // something went wrong, the context should have been removed
+        return LT_SCHEDULER_NULL_FUNCTION;
+    }
+    currentContext->nextFunction = functionToCall(currentContext->args);
+    if(currentContext->nextFunction != LT_NULL)
+    {
+        lt_criticalEnter();
+        pushToEnd(&mainQueue, currentContext);
+        lt_criticalExit();   
+    }
+    return 0;
 }
-
-#ifdef LT_USE_SEMAPHORES
-
-uint8_t lt_semaphoreTake(lt_semaphoreBinary_t *sem, lt_thread_t *thread)
-{
-	if((sem != NULL) && (thread != NULL))
-	{
-		lt_criticalStart();
-		if(sem->taken)
-		{
-			pushToEnd(&sem->waiting, thread);
-			thread->flag = LT_BLOCKED;
-		}
-		else
-		{
-			sem->taken = 1;
-		}
-		lt_criticalEnd();
-	}
-}
-
-uint8_t lt_semaphoreGive(lt_semaphoreBinary_t *sem)
-{
-	if(sem != NULL)
-	{
-		lt_criticalStart();
-		if(sem->taken)
-		{
-			lt_thread_t *thread =  popFromStart(&sem->waiting);
-			if(thread == NULL)
-			{
-				sem->taken = 0;
-			}
-			else
-			{
-				pushToEnd(&sScheduledList, thread);
-				thread->flag = LT_SCHEDULED;
-			}
-		}
-		lt_criticalEnd();
-	}
-}
-
-#endif
-
-#ifdef LT_USE_DELAY
-
-uint8_t lt_delay(uint16_t ticks, lt_thread_t *thread)
-{
-	if((ticks != 0) && (thread != NULL))
-	{
-		thread->delay = ticks;
-		thread->flag = LT_BLOCKED;
-
-		lt_criticalStart();
-		{
-			if(sDelayed == NULL)
-			{
-				sDelayed = thread;
-			}
-			else if(thread->delay < sDelayed->delay)
-			{
-				thread->nextThread = sDelayed;
-				sDelayed = thread;
-				thread->nextThread->delay -= thread->delay;
-			}
-			else
-			{
-				volatile lt_thread_t *temp = sDelayed;
-				while(1)
-				{
-					thread->delay -= temp->delay;
-					if(temp->nextThread == NULL)
-					{
-						temp->nextThread = thread;
-						break;
-					}
-					else if(thread->delay < temp->nextThread->delay)
-					{
-						thread->nextThread = temp->nextThread;
-						temp->nextThread = thread;
-						thread->nextThread->delay -= thread->delay;
-						break;
-					}
-					else
-					{
-						temp = temp->nextThread;
-					}
-				}
-			}
-		}
-		lt_criticalEnd();
-	}
-	return ticks;
-}
-
-void lt_tick()
-{
-	volatile lt_thread_t *current;
-
-	if(sDelayed != NULL)
-	{
-		sDelayed->delay--;
-		while(sDelayed->delay == 0u)
-		{
-			current = sDelayed;
-			sDelayed = sDelayed->nextThread;
-			current->nextThread = NULL;
-			
-			// schedule
-			pushToEnd(&sScheduledList, current);
-			current->flag = LT_SCHEDULED;
-
-			if(sDelayed == NULL)
-			{
-				break;
-			}
-		}
-	}
-}
-#endif
-
-#ifdef LT_USE_NOTIFICATIONS
-/*
-uint8_t lt_notifyTake(lt_thread_t *thread)
-{
-	if(thread != NULL && thread->flag == LT_SCHEDULED)
-	{
-		thread->flag = LT_BLOCKED;
-	}
-	return 0;
-}
-*/
-uint8_t lt_notifyGive(lt_thread_t *thread)
-{
-	lt_criticalStart();
-	if((thread != NULL) && (thread->flag == LT_BLOCKED))
-	{
-		pushToEnd(&sScheduledList, thread);
-		thread->flag = LT_SCHEDULED;
-	}
-	lt_criticalEnd();
-
-	return 0;
-}
-
-#endif
